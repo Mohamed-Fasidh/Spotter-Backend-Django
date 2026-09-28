@@ -1,7 +1,5 @@
 """Endpoint resolution tests (no network: lat,lng parsing + offline city hit)."""
 
-from unittest import mock
-
 from django.test import SimpleTestCase
 
 from routing.services import resolve
@@ -19,10 +17,26 @@ class ResolveTests(SimpleTestCase):
         with self.assertRaises(resolve.ResolveError):
             resolve.resolve("")
 
-    def test_city_state_uses_offline_table_no_network(self):
-        # If the offline table resolves it, Nominatim must not be called.
-        with mock.patch.object(resolve, "_nominatim") as nom:
-            lat, lng = resolve.resolve("Chicago, IL")
-            nom.assert_not_called()
+    def test_city_state_uses_offline_table(self):
+        lat, lng = resolve.resolve("Chicago, IL")
         self.assertAlmostEqual(lat, 41.85, delta=0.5)
         self.assertAlmostEqual(lng, -87.65, delta=0.5)
+
+    def test_rejects_non_us_coordinates(self):
+        with self.assertRaises(resolve.ResolveError):
+            resolve.resolve("51.5,-0.12")  # London, England
+
+    def test_accepts_alaska_and_hawaii_coordinates(self):
+        self.assertEqual(resolve.resolve("64.8,-147.7"), (64.8, -147.7))
+        self.assertEqual(resolve.resolve("21.3,-157.8"), (21.3, -157.8))
+
+    def test_rejects_place_without_state(self):
+        with self.assertRaises(resolve.ResolveError):
+            resolve.resolve("London")
+        with self.assertRaises(resolve.ResolveError):
+            resolve.resolve("Toronto,Canada")
+
+    def test_city_with_state_disambiguates(self):
+        lat, lng = resolve.resolve("London, KY")
+        self.assertAlmostEqual(lat, 37.13, delta=0.5)
+        self.assertAlmostEqual(lng, -84.08, delta=0.5)

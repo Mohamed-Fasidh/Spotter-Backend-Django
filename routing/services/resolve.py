@@ -2,29 +2,19 @@
 
 Accepts either:
 
-  - "lat,lng" -> parsed directly, zero external calls; or
+  - "lat,lng" -> parsed directly and checked to be inside the USA; or
+  - "City, ST" -> looked up in the bundled offline US city table.
 
-  - a place name -> resolved once, cached. We try the bundled offline city
-    table first ("City, ST"); only if that misses do we fall back to
-    Nominatim (free, no key).
+There is deliberately NO external geocoding: it keeps requests fast, uses
+zero geocoder calls, and avoids silently guessing a wrong place for
+ambiguous input such as "London" or "Toronto, Canada".
 
-Endpoint geocoding is a separate concern from station geocoding:
-stations are never geocoded at request time.
-
-The endpoint geocoder is restricted to the United States.
+Stations are never geocoded at request time either.
 """
 
 import re
-from functools import lru_cache
-
-import requests
-from django.conf import settings
 
 from routing.services import cities
-
-
-# Reused Session for keep-alive on the rare Nominatim fallback calls.
-_SESSION = requests.Session()
 
 
 class ResolveError(Exception):
@@ -35,26 +25,30 @@ _LATLNG_RE = re.compile(
     r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$"
 )
 
+# Approximate bounding boxes: (min_lat, max_lat, min_lng, max_lng).
+# Rough by design: catches obvious non-US points, but border areas of
+# Canada/Mexico that fall inside a box are not rejected.
+_US_BOXES = [
+    (24.4, 49.5, -125.0, -66.9),    # contiguous US
+    (51.2, 71.5, -180.0, -129.9),   # Alaska
+    (18.8, 22.5, -160.6, -154.7),   # Hawaii
+]
+
+
+def _in_usa(lat, lng):
+    return any(a <= lat <= b and c <= lng <= d for a, b, c, d in _US_BOXES)
+
 
 def resolve(value: str):
     """Return (lat, lng) for a start/finish string."""
 
-    # ---------------------------------------------------------
     # 1. Basic input validation
-    # ---------------------------------------------------------
     if not value or not value.strip():
         raise ResolveError("Missing start/finish value.")
 
     value = value.strip()
 
-    # ---------------------------------------------------------
-    # 2. Direct lat,lng input
-    #
-    # Example:
-    #   34.0522,-118.2437
-    #
-    # This performs no external geocoding call.
-    # ---------------------------------------------------------
+    # 2. Direct lat,lng input (e.g. "34.0522,-118.2437"); no lookups needed.
     match = _LATLNG_RE.match(value)
 
     if match:
@@ -62,18 +56,16 @@ def resolve(value: str):
         lng = float(match.group(2))
 
         if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ResolveError(f"Coordinates out of range: {value!r}")
+
+        if not _in_usa(lat, lng):
             raise ResolveError(
-                f"Coordinates out of range: {value!r}"
+                f"Location must be within the United States: {value!r}"
             )
 
         return lat, lng
 
-    # ---------------------------------------------------------
-    # 3. Offline "City, ST" lookup
-    #
-    # Try the bundled city table first so common US locations
-    # require zero external geocoding calls.
-    # ---------------------------------------------------------
+    # 3. Offline "City, ST" lookup against the bundled US city table.
     if "," in value:
         city, _, tail = value.rpartition(",")
         state = tail.strip().upper()
@@ -84,90 +76,8 @@ def resolve(value: str):
             if coord is not None:
                 return coord
 
-    # ---------------------------------------------------------
-    # 4. Nominatim fallback
-    #
-    # Only used when the local city table cannot resolve the
-    # requested place.
-    # ---------------------------------------------------------
-    return _nominatim(value)
-
-
-@lru_cache(maxsize=256)
-def _nominatim(query: str):
-    """Resolve a place name using Nominatim.
-
-    Nominatim is explicitly restricted to US results.
-    The returned result is also checked to make sure the
-    geocoder actually returned a US location.
-    """
-
-    try:
-        response = _SESSION.get(
-            settings.NOMINATIM_URL,
-            params={
-                "q": query,
-                "format": "json",
-                "limit": 1,
-                "countrycodes": "us",
-                "addressdetails": 1,
-            },
-            headers={
-                "User-Agent": settings.GEOCODER_USER_AGENT
-            },
-            timeout=settings.EXTERNAL_HTTP_TIMEOUT,
-        )
-
-        response.raise_for_status()
-        results = response.json()
-
-    except requests.RequestException as exc:
-        raise ResolveError(
-            f"Geocoding service unavailable: {exc}"
-        ) from exc
-
-    # ---------------------------------------------------------
-    # No result
-    # ---------------------------------------------------------
-    if not results:
-        raise ResolveError(
-            f"Could not geocode location: {query!r}"
-        )
-
-    result = results[0]
-
-    # ---------------------------------------------------------
-    # Explicitly verify the returned country.
-    #
-    # This is an additional defensive check even though the
-    # Nominatim request already uses countrycodes=us.
-    # ---------------------------------------------------------
-    address = result.get("address", {})
-
-    country_code = address.get("country_code", "").lower()
-
-    if country_code != "us":
-        raise ResolveError(
-            f"Location must be within the United States: {query!r}"
-        )
-
-    # ---------------------------------------------------------
-    # Extract coordinates
-    # ---------------------------------------------------------
-    try:
-        lat = float(result["lat"])
-        lng = float(result["lon"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ResolveError(
-            f"Invalid coordinates returned for location: {query!r}"
-        ) from exc
-
-    # ---------------------------------------------------------
-    # Final coordinate-range validation
-    # ---------------------------------------------------------
-    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-        raise ResolveError(
-            f"Invalid coordinates returned for location: {query!r}"
-        )
-
-    return lat, lng
+    # 4. Anything else is rejected rather than guessed.
+    raise ResolveError(
+        f"Could not find a US location for {value!r}. "
+        "Use 'City, ST' (e.g. 'Dallas, TX') or 'lat,lng'."
+    )
