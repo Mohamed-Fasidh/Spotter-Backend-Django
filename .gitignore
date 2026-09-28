@@ -1,0 +1,24 @@
+.gstack/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache / compiled files
+__pycache__/
+*/__pycache__/
+*.py[cod]
+
+# Django
+db.sqlite3
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
