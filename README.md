@@ -573,7 +573,7 @@ A successful response has this general structure:
   },
   "distance_miles": 2793.4,
   "starting_fuel_cost_usd": 164.12,
-  "total_fuel_cost_usd": 1027.33,
+  "total_fuel_cost_usd": 863.21,
   "fuel_stops": [
     {
       "name": "Example Fuel Station",

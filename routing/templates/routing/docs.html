@@ -94,8 +94,8 @@
     <p class="muted">Successful <code>GET /route/</code> response:</p>
     <pre><code>{
   "route": { "type": "LineString", "coordinates": [[lon, lat], ...] },
-  "distance_miles": 2793.7,
-  "total_fuel_cost_usd": 699.15,
+  "distance_miles": 2793.4,
+  "total_fuel_cost_usd": 863.21,
   "fuel_stops": [
     {
       "name": "Maverik #674", "city": "North Las Vegas", "state": "NV",
@@ -123,7 +123,7 @@
     <h2>How it works</h2>
     <p class="muted">
       Stations are geocoded once at import from an offline dataset, so the request
-      path makes exactly one external call (to OSRM for the route). Corridor
+      path makes exactly one external call (to OSRM (with Nominatim only as a fallback for locations not resolved locally) for the route). Corridor
       matching and the fuel optimization are pure in-memory computation. The fuel
       choice is the classic gas-station problem: buy just enough to reach the next
       cheaper station in range, otherwise fill up and run to the cheapest reachable

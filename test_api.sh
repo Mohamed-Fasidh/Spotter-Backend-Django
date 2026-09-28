@@ -49,7 +49,9 @@ if "error" in d:
     print(f"  error: {d['error']}")
 if "distance_miles" in d and "total_fuel_cost_usd" in d:
     print(f"  distance: {d['distance_miles']} mi")
-    print(f"  total cost: ${d['total_fuel_cost_usd']}")
+    print(f"  total cost / starting fuel: ${d['total_fuel_cost_usd']}")
+if "starting_fuel_cost_usd" in d:
+    print(f"  starting fuel: ${d['starting_fuel_cost_usd']}")
     print(f"  fuel stops: {len(d.get('fuel_stops', []))}")
     m = d.get("meta", {})
     if m:
@@ -75,7 +77,7 @@ req "Los Angeles, CA -> New York, NY (place names)" 200 \
 req "Coordinates: 34.05,-118.24 -> 40.71,-74.01" 200 \
   "/route/?start=34.05,-118.24&finish=40.71,-74.01"
 
-# 3. Short route inside one tank -> zero fuel stops, $0.
+# 3. Short route inside one tank -> zero additional fuel stops; starting fuel is included in the reported total cost / starting fuel.
 req "Oklahoma City, OK -> Tulsa, OK (single tank)" 200 \
   "/route/?start=Oklahoma%20City,%20OK&finish=Tulsa,%20OK"
 
