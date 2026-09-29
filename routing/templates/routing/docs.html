@@ -122,13 +122,14 @@
 
     <h2>How it works</h2>
     <p class="muted">
-      Stations are geocoded once at import from an offline dataset, so the request
-      path makes exactly one external call (to OSRM (with Nominatim only as a fallback for locations not resolved locally) for the route). Corridor
-      matching and the fuel optimization are pure in-memory computation. The fuel
-      choice is the classic gas-station problem: buy just enough to reach the next
-      cheaper station in range, otherwise fill up and run to the cheapest reachable
-      one — total gallons is fixed by distance, so only <em>where</em> you buy is
-      optimized.
+      Stations are geocoded once at import using the bundled offline dataset, 
+      so the normal request path makes a single external routing call to OSRM. 
+      Corridor matching and fuel optimization are performed entirely in memory. 
+      The fuel choice uses the classic gas-station optimization strategy: buy only enough 
+      fuel to reach the next cheaper station within range; otherwise, buy enough to reach the cheapest 
+      reachable station while respecting the vehicle's 500-mile range. Since fuel consumption is determined
+       by route distance and the vehicle's 10 MPG efficiency, the optimization focuses on <em>where</em> to purchase fuel.
+
     </p>
 
     <p class="muted" style="margin-top:40px; font-size:13px">
