@@ -178,13 +178,4 @@ CORRIDOR_MILES = 5.0
 OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
 
 # Public Nominatim geocoding service. No API key required.
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-
-# Nominatim asks callers to identify themselves.
-# Use your own real contact information if you want to include an email.
-GEOCODER_USER_AGENT = os.getenv(
-    "GEOCODER_USER_AGENT",
-    "spotter-fuelroute-assessment/1.0",
-)
-
 EXTERNAL_HTTP_TIMEOUT = 15

@@ -1,18 +1,23 @@
-"""The fuel optimizer: the classic gas-station problem.
+"""Fuel-stop optimizer for the route-planning API.
 
-Total gallons burned is fixed by distance (D / mpg); the only thing to
-optimize is WHERE you buy, because prices differ per station. Given stations
-ordered by mile marker with a max tank range, minimize total dollars.
+The vehicle starts the trip with a full tank. Fuel consumption is determined
+by route distance and vehicle MPG. The optimizer determines WHERE additional
+fuel should be purchased based on station prices while respecting the
+vehicle's maximum range.
 
-Assumption (stated in the README): you leave the origin with a full tank
-(``tank_range`` miles) and the reported cost is the fuel you purchase to
-complete the trip.
+Assumption:
+    The vehicle leaves the origin with a full tank (``tank_range`` miles of
+    range). The reported fuel cost represents only additional fuel purchased
+    during the trip; the initial tank is not charged by the API.
 
-Greedy rule (provably optimal for uniform consumption + fixed tank):
-  at each station, if a cheaper station is reachable within range, buy just
-  enough to reach it; otherwise fill the tank (capped at what finishing needs).
+Greedy strategy:
+    At each station, if a lower-priced station is reachable within the
+    vehicle's range, buy only enough fuel to reach that station. Otherwise,
+    buy enough fuel to cover the required distance while respecting the
+    maximum tank range.
 
-Verified against a brute-force optimum in the test suite.
+The implementation is validated against a brute-force reference in the
+test suite.
 """
 
 _EPS = 1e-9
