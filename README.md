@@ -108,7 +108,6 @@ python manage.py runserver
 ```
 ## Assessment Demo
 
-### Loom Video
 
 [Watch the API Demonstration](https://drive.google.com/file/d/1cy3VVrTPHHkvC3WKuDGiGUHD-Bm2lAqe/view?usp=sharing)
 
