@@ -24,32 +24,45 @@ from routing.services.osrm import RouteError, RouteServiceError, get_route
 from routing.services.resolve import ResolveError, resolve
 
 
-# Default cap on polyline points returned to the client. Full geometry can be
-# tens of thousands of points (~800 KB); this keeps the payload small and map-
-# smooth. It is DISPLAY ONLY -- the fuel plan is always computed on full
-# geometry, so trimming here never changes the answer. ?geometry=full opts out.
+# Default cap on polyline points returned to the client.
+# Full geometry can contain tens of thousands of points, so this keeps the
+# response payload small and the map smooth.
+#
+# IMPORTANT:
+# This is DISPLAY ONLY. The fuel plan is calculated using the full route
+# geometry, so downsampling does not affect the fuel-stop calculation.
+# Use ?geometry=full to return every route vertex.
 _DISPLAY_MAX_POINTS = 600
 
 
 def _downsample_for_display(coords, max_points=_DISPLAY_MAX_POINTS):
-    """Evenly thin the polyline to at most ``max_points`` points, keeping ends."""
+    """Evenly thin the polyline to at most ``max_points`` points.
+
+    The first and last coordinates are always preserved.
+    """
     n = len(coords)
 
     if n <= max_points:
         return coords
 
     step = (n - 1) / (max_points - 1)
-    idx = sorted({round(i * step) for i in range(max_points)} | {0, n - 1})
+
+    idx = sorted(
+        {round(i * step) for i in range(max_points)}
+        | {0, n - 1}
+    )
 
     return [coords[i] for i in idx]
 
 
 def _serialize_stop(s):
-    """Map an internal stop dict to the public JSON shape.
+    """Map an internal fuel-stop dict to the public JSON shape.
 
-    Renames the internal keys (``mile`` -> ``mile_marker``, ``price`` ->
-    ``price_per_gallon``) and rounds for a clean payload: 5 decimals on coords
-    (~1 m), 4 on price (sub-cent), 1 on the mile marker.
+    Internal keys:
+        mile  -> mile_marker
+        price -> price_per_gallon
+
+    Values are rounded to keep the API response compact and readable.
     """
     return {
         "name": s["name"],
@@ -66,41 +79,87 @@ def _serialize_stop(s):
 
 @require_GET
 def route_view(request):
-    """Return the route and cost-effective fuel stops.
+    """Return the driving route and cost-effective fuel stops.
 
-    The vehicle starts with a full tank. Therefore, ``total_fuel_cost_usd``
-    represents only additional fuel purchased during the journey.
+    The vehicle leaves the origin with a full tank.
+
+    Therefore:
+        total_fuel_cost_usd
+
+    represents only the additional fuel purchased during the journey.
+    Fuel already present in the vehicle at the start is not charged again.
     """
 
-    # Time the whole request so the response can report elapsed time.
+    # Time the complete request so the API can report elapsed time.
     t0 = time.perf_counter()
 
-    # 1. Resolve endpoints (accepts "lat,lng" or a place name).
+    # ------------------------------------------------------------------
+    # 1. Resolve start and finish locations.
+    #
+    # Supported forms:
+    #   - "City, ST"
+    #   - "lat,lng"
+    # ------------------------------------------------------------------
     try:
         start = resolve(request.GET.get("start", ""))
         finish = resolve(request.GET.get("finish", ""))
     except ResolveError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+        return JsonResponse(
+            {"error": str(exc)},
+            status=400,
+        )
 
-    # 2. The single external call at request time: one OSRM route request.
+    # ------------------------------------------------------------------
+    # 2. Get the driving route.
+    #
+    # This is the single external routing call made during the request.
+    # The OSRM service itself is cached by the routing service.
+    # ------------------------------------------------------------------
     try:
         coords, distance_mi = get_route(start, finish)
+
     except RouteError as exc:
-        return JsonResponse({"error": str(exc)}, status=422)
+        # OSRM responded but could not find a drivable route.
+        return JsonResponse(
+            {"error": str(exc)},
+            status=422,
+        )
+
     except RouteServiceError:
+        # OSRM itself was unreachable or returned an unexpected service error.
         return JsonResponse(
             {"error": "Routing service unavailable."},
             status=502,
         )
 
-    # 3. Pure in-memory computation against our own data.
+    # ------------------------------------------------------------------
+    # 3. Find fuel stations along the route.
     #
-    # The fuel optimizer starts with a full tank and therefore only reports
-    # additional fuel purchased during the journey.
-    candidates = geo.stations_along_route(coords, distance_mi)
+    # This is performed locally using the supplied fuel-price data and
+    # spatial filtering. No external fuel-station API is called here.
+    # ------------------------------------------------------------------
+    candidates = geo.stations_along_route(
+        coords,
+        distance_mi,
+    )
 
+    # ------------------------------------------------------------------
+    # 4. Calculate the optimal fuel purchases.
+    #
+    # plan_fuel() assumes the vehicle starts with a full tank and returns:
+    #
+    #   total = cost of additional fuel purchased during the trip
+    #   stops = ordered fuel purchases
+    #
+    # It also raises Infeasible when a route leg exceeds the vehicle's
+    # maximum range without a reachable fuel station.
+    # ------------------------------------------------------------------
     try:
-        total, stops = plan_fuel(candidates, distance_mi)
+        total, stops = plan_fuel(
+            candidates,
+            distance_mi,
+        )
+
     except Infeasible as exc:
         return JsonResponse(
             {
@@ -110,35 +169,69 @@ def route_view(request):
             status=422,
         )
 
-    # 4. Geometry for the RESPONSE only.
+    # ------------------------------------------------------------------
+    # 5. Prepare route geometry for the response.
     #
-    # Default: thinned for a smaller payload.
-    # ?geometry=full returns every route vertex.
-    # Neither option changes the fuel calculation.
+    # Default:
+    #   simplified geometry with at most 600 points.
+    #
+    # Optional:
+    #   ?geometry=full
+    #
+    # IMPORTANT:
+    # This only affects the returned/displayed geometry.
+    # It does NOT affect the fuel calculation.
+    # ------------------------------------------------------------------
     want_full = request.GET.get("geometry") == "full"
+
     route_coords = (
-        coords if want_full else _downsample_for_display(coords)
+        coords
+        if want_full
+        else _downsample_for_display(coords)
     )
 
-    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    # ------------------------------------------------------------------
+    # 6. Calculate request duration.
+    # ------------------------------------------------------------------
+    elapsed_ms = (
+        time.perf_counter() - t0
+    ) * 1000.0
 
+    # ------------------------------------------------------------------
+    # 7. Return the API response.
+    # ------------------------------------------------------------------
     return JsonResponse(
         {
             "route": {
                 "type": "LineString",
                 "coordinates": route_coords,
             },
-            "distance_miles": round(distance_mi, 1),
+            "distance_miles": round(
+                distance_mi,
+                1,
+            ),
             "total_fuel_cost_usd": total,
-            "fuel_stops": [_serialize_stop(s) for s in stops],
+            "fuel_stops": [
+                _serialize_stop(s)
+                for s in stops
+            ],
             "meta": {
                 "stations_considered": len(candidates),
                 "route_points": len(route_coords),
-                "geometry": "full" if want_full else "simplified",
+                "geometry": (
+                    "full"
+                    if want_full
+                    else "simplified"
+                ),
                 "corridor_miles": settings.CORRIDOR_MILES,
-                "vehicle_range_miles": settings.VEHICLE_RANGE_MILES,
+                "vehicle_range_miles": (
+                    settings.VEHICLE_RANGE_MILES
+                ),
                 "vehicle_mpg": settings.VEHICLE_MPG,
-                "elapsed_ms": round(elapsed_ms, 1),
+                "elapsed_ms": round(
+                    elapsed_ms,
+                    1,
+                ),
             },
         }
     )
@@ -149,16 +242,17 @@ def map_view(request):
     return render(
         request,
         "routing/map.html",
-        {"carto_key": settings.CARTO_KEY},
+        {
+            "carto_key": settings.CARTO_KEY,
+        },
     )
 
 
 def _api_spec():
-    """Machine-readable description of the API, built from live settings.
+    """Machine-readable description of the API.
 
-    Kept as a plain dict so both the JSON endpoint and the HTML docs page
-    render from one source of truth. The documented parameters and limits
-    therefore stay aligned with the configured values.
+    The specification is built from live Django settings so documented
+    vehicle limits remain aligned with the actual application configuration.
     """
     return {
         "name": "Fuel Route API",
@@ -188,37 +282,48 @@ def _api_spec():
                 ),
                 "status_codes": {
                     "200": "route found",
-                    "400": "start/finish missing or unresolvable",
+                    "400": (
+                        "start/finish missing or unresolvable"
+                    ),
                     "422": (
                         "no drivable route, or infeasible "
                         "for the tank range"
                     ),
-                    "502": "routing service (OSRM) unreachable",
+                    "502": (
+                        "routing service (OSRM) unreachable"
+                    ),
                 },
                 "examples": [
-                    "/route/?start=Los Angeles, CA&finish=New York, NY",
-                    "/route/?start=34.05,-118.24&finish=40.71,-74.01",
+                    (
+                        "/route/?start=Los Angeles, CA"
+                        "&finish=New York, NY"
+                    ),
+                    (
+                        "/route/?start=34.05,-118.24"
+                        "&finish=40.71,-74.01"
+                    ),
                 ],
             },
             "GET /map/": {
-                "summary": "Interactive Leaflet demo page."
+                "summary": "Interactive Leaflet demo page.",
             },
             "GET /api/": {
                 "summary": (
                     "This machine-readable API spec (JSON)."
-                )
+                ),
             },
             "GET /": {
                 "summary": (
                     "Human-readable API documentation (HTML)."
-                )
+                ),
             },
         },
         "vehicle_model": {
             "range_miles": settings.VEHICLE_RANGE_MILES,
             "mpg": settings.VEHICLE_MPG,
             "tank_gallons": (
-                settings.VEHICLE_RANGE_MILES / settings.VEHICLE_MPG
+                settings.VEHICLE_RANGE_MILES
+                / settings.VEHICLE_MPG
             ),
             "corridor_miles": settings.CORRIDOR_MILES,
             "assumption": (
@@ -231,8 +336,10 @@ def _api_spec():
 
 
 def api_spec_view(request):
-    """Return the API spec as JSON for tooling/programmatic discovery."""
-    return JsonResponse(_api_spec())
+    """Return the API specification as JSON."""
+    return JsonResponse(
+        _api_spec()
+    )
 
 
 def docs_view(request):
@@ -240,6 +347,8 @@ def docs_view(request):
     return render(
         request,
         "routing/docs.html",
-        {"spec": _api_spec()},
+        {
+            "spec": _api_spec(),
+        },
     )
 
