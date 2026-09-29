@@ -1,303 +1,170 @@
 # Loom Walkthrough Script — Fuel Route API
 
-> **Target duration:** Under 5 minutes  
-> **Format:** Spoken walkthrough + live Postman demonstration + concise code tour
+**Target duration:** Under 5 minutes  
+**Format:** Spoken walkthrough + live Postman demonstration + concise code tour
 
----
+## 0. Introduction — ~20 seconds
 
-## Before Recording
-
-Before starting the Loom:
-
-- Start the Django server.
-- Open Postman with the API collection.
-- Open the `routing/` directory in your editor.
-- Have one route longer than 500 miles ready so that fuel stops are visible.
-- Have one short route ready that can be completed within the initial full tank.
-- Have the impossible/no-route example ready.
-- Run the test suite before recording.
-
----
-
-# 0. Introduction — ~20 seconds
-
-### Say:
+**Say:**
 
 > Hi, I'm Mohamed Fasidh. This is my submission for the Backend Django Engineer coding assessment.
 >
-> The task is to build an API that takes a start and finish location within the US and returns the driving route, cost-effective fuel stops along that route, and the total fuel cost for a vehicle with a maximum range of 500 miles and fuel economy of 10 miles per gallon.
+> The task is to build an API that takes a start and finish location within the US and returns the driving route, cost-effective fuel stops along that route, and the additional fuel cost for a vehicle with a maximum range of 500 miles and fuel economy of 10 miles per gallon.
 >
-> I'll first explain the main design decision, then demonstrate the API in Postman, and finally give a quick code walkthrough.
+> I'll briefly explain the architecture, demonstrate the API in Postman, and then give a quick code walkthrough.
 
----
+## 1. Architecture and key constraint — ~40 seconds
 
-# 1. Architecture and Key Constraint — ~40 seconds
+**Say:**
 
-### Say:
-
-> The supplied fuel-price dataset contains thousands of stations, but the station records do not consistently provide usable latitude and longitude coordinates.
+> The supplied fuel-price dataset contains many station records, and geocoding every station during an API request would create unnecessary external calls and latency.
 >
-> A straightforward approach would be to geocode every station during every API request. That would require thousands of external API calls and would make the API both slow and dependent on external services.
+> Instead, the fuel data is preprocessed during import. Station records are deduplicated and their coordinates are prepared from the bundled US cities data.
 >
-> Instead, I preprocess the fuel-price data during import. I deduplicate stations using their OPIS identifiers and resolve city and state information against a bundled US-cities dataset to obtain coordinates.
+> At request time, the application resolves the endpoints locally where possible, makes the driving-route request to OSRM, and then performs station filtering and fuel optimization locally in memory.
 >
-> This means the station coordinates are prepared once during preprocessing rather than geocoding every station on every request.
+> This keeps the external routing work to a minimum.
+
+## 2. Live Postman demonstration — ~90 seconds
+
+### 2.1 Long route
+
+**Do:** Send the Los Angeles, CA → New York, NY request.
+
+**Say:**
+
+> Here I'm sending a coast-to-coast request using place names.
+
+Scroll through the response.
+
+> The API returns the route geometry, route distance, total additional fuel cost, and the recommended fuel stops.
 >
-> At request time, the application obtains the driving route from OSRM. Station filtering and fuel optimization are then performed locally in memory.
+> The exact values depend on the current OSRM route and fuel-price dataset, so I'm using the values returned by this live request rather than quoting hard-coded numbers.
 >
-> Let me show the API working.
+> Each fuel stop includes the station details, price per gallon, gallons purchased, purchase cost, and mile marker along the route.
 
----
+Show `meta`.
 
-# 2. Live Postman Demonstration — ~90 seconds
+> The metadata also shows the number of stations considered, route points returned, corridor width, vehicle range, MPG, and server-side processing time.
 
-## 2.1 Long Route
+### 2.2 Short route
 
-### Do:
+**Do:** Send Oklahoma City, OK → Tulsa, OK.
 
-Select the:
+**Say:**
 
-`Los Angeles, CA → New York, NY`
-
-request and click **Send**.
-
-### Say:
-
-> Here I'm sending a coast-to-coast request from Los Angeles to New York using place names.
-
-### Do:
-
-Scroll through the JSON response.
-
-### Say:
-
-> The API returns the route geometry, the total route distance, the total cost of additional fuel purchased, and the recommended fuel stops.
+> This demonstrates the full-tank assumption. The vehicle starts with a full 500-mile range, so if the route can be completed without buying additional fuel, no fuel stop is returned and the additional fuel cost is zero.
 >
-> The fuel stops are ordered along the route. Each stop contains the station name, location, price per gallon, gallons purchased, purchase cost, and mile marker.
+> In other words, `total_fuel_cost_usd` represents only fuel purchased during the journey. The initial tank is assumed to already be available at the origin.
 
-If you mention the distance, read the current value from Postman. Do not use a memorized fuel-cost figure.
+### 2.3 Impossible route
 
-### Then scroll to `meta`.
+**Do:** Send Honolulu, HI → Los Angeles, CA.
 
-### Say:
+**Say:**
 
-> The metadata shows how many stations were considered, how many route points were returned, the corridor width, the vehicle range and MPG, and the server-side processing time.
+> This has no drivable road connection, so the API handles it with a 422 response instead of returning invalid route data.
 
----
+### 2.4 Optional map
 
-## 2.2 Short Route
+**Do:** Open `/map/`.
 
-### Do:
+**Say:**
 
-Select:
+> I also included a simple Leaflet visualization for the route and selected fuel stops.
 
-`Oklahoma City, OK → Tulsa, OK`
+Skip this if time is tight.
 
-and click **Send**.
+## 3. Code walkthrough — ~100 seconds
 
-### Say:
+### Point 1 — Data preprocessing
 
-> Here's an important edge case: a short route that can be completed using the fuel already in the vehicle's initial full tank.
+Open:
 
-### Point to:
-
-```json
-{
-  "distance_miles": 106.3,
-  "total_fuel_cost_usd": 0.0,
-  "fuel_stops": []
-}
+```text
+routing/management/commands/import_fuel_prices.py
 ```
 
-Only use `106.3` if that is the current Postman result.
+**Say:**
 
-### Say:
-
-> The distance is within the vehicle's 500-mile starting range.
->
-> Therefore, no additional fuel purchase is required and `fuel_stops` is empty.
->
-> The vehicle consumes fuel during the trip, but because it starts with a full tank and the trip fits within that available range, no additional fuel needs to be purchased. Therefore the reported fuel purchase cost is zero.
-
----
-
-## 2.3 Impossible Route
-
-### Do:
-
-Select:
-
-`Honolulu, HI → Los Angeles, CA`
-
-and click **Send**.
-
-### Say:
-
-> Finally, here's an invalid driving scenario. Honolulu to Los Angeles has no drivable road connection.
->
-> The API handles that cleanly with a 422 response and an error message instead of returning invalid route data or crashing.
-
----
-
-## 2.4 Optional Map — ~10 seconds
-
-### Do:
+> The import command preprocesses the supplied fuel-price data. It deduplicates station records and prepares station coordinates before requests arrive, avoiding station-by-station geocoding on the request path.
 
 Open:
 
-`/map/`
-
-in the browser if available.
-
-### Say:
-
-> I also included a simple Leaflet visualization that displays the route and the selected fuel stops on a map.
-
-If time is tight, skip this section.
-
----
-
-# 3. Code Walkthrough — ~100 seconds
-
-## Point 1 — Data Preprocessing and Routing
-
-### Do:
-
-Open:
-
-`routing/management/commands/import_fuel_prices.py`
-
-### Say:
-
-> The import command preprocesses the supplied fuel-price CSV.
->
-> Stations are deduplicated using their OPIS identifiers, and city and state information is matched against the bundled US-cities dataset to obtain coordinates.
->
-> This preprocessing avoids expensive station-by-station geocoding during API requests.
-
-### Do:
-
-Open:
-
-`routing/views.py`
-
-### Say:
-
-> On the request path, the application resolves the start and finish locations, requests the driving route from OSRM, and then performs station filtering and fuel optimization locally.
->
-> The API is designed to minimize external routing and geocoding calls while keeping the request-time computation lightweight.
-
----
-
-## Point 2 — Route Corridor Matching
-
-### Do:
-
-Open:
-
-`routing/services/geo.py`
-
-### Say:
-
-> Once the route polyline is available, I identify fuel stations within a configurable corridor around the route.
->
-> A KD-tree is used to efficiently narrow the station set to nearby candidates.
->
-> The candidates are then checked against the route geometry and projected to a mile marker along the route.
->
-> This keeps the spatial processing local instead of making an external request for every fuel station.
-
----
-
-## Point 3 — Fuel Optimization
-
-### Do:
-
-Open:
-
-`routing/services/fuel.py`
-
-### Say:
-
-> The vehicle has a maximum range of 500 miles and achieves 10 miles per gallon.
->
-> The optimizer starts with a full tank, which corresponds to 50 gallons.
->
-> Therefore, the optimizer only calculates additional fuel that needs to be purchased during the journey.
->
-> At each station, it checks whether a cheaper reachable station exists within the vehicle's range. If one exists, it purchases enough fuel to reach that station. Otherwise, it purchases enough to continue the journey while respecting the tank range.
->
-> The result is an ordered list of fuel purchases and the total cost of those purchases.
-
-### Do:
-
-Briefly show:
-
-`routing/tests/test_fuel.py`
-
-### Say:
-
-> The fuel logic is covered by tests, including comparisons against a brute-force reference implementation for the tested cases.
-
-Only say "provably optimal" if the repository contains the appropriate formal proof or the tests establish the exact mathematical conditions needed for that claim.
-
----
-
-# 4. Testing — ~20 seconds
-
-### Do:
-
-Show the terminal:
-
-```bash
-python manage.py test
+```text
+routing/views.py
 ```
 
-### Say:
+**Say:**
 
-> The Django test suite validates the API, fuel optimization, route handling, error cases, and geometry behavior.
+> The view resolves the endpoints, requests the driving route from OSRM, finds nearby fuel stations locally, runs the fuel optimizer, and serializes the response.
 
-Use the actual test count displayed by the terminal. Do not hard-code a test count unless the current terminal actually reports it.
+### Point 2 — Route corridor matching
 
-### Optional:
+Open:
+
+```text
+routing/services/geo.py
+```
+
+**Say:**
+
+> The route geometry is used to identify fuel stations within a configurable corridor. A KD-tree narrows the candidate stations efficiently, and the candidates are projected onto the route to obtain their mile markers.
+
+### Point 3 — Fuel optimization
+
+Open:
+
+```text
+routing/services/fuel.py
+```
+
+**Say:**
+
+> The vehicle starts with a full 500-mile range. At 10 MPG, that corresponds to 50 gallons.
+>
+> The optimizer therefore calculates where additional fuel needs to be purchased. It looks ahead for reachable lower-priced stations and otherwise buys enough fuel to cover the required distance while respecting the maximum range.
+>
+> The returned cost represents only these additional purchases.
+
+Show:
+
+```text
+routing/tests/test_fuel.py
+```
+
+**Say:**
+
+> The fuel tests include comparisons against a brute-force reference implementation for randomized cases.
+
+## 4. Testing — ~20 seconds
 
 Run:
 
 ```bash
 python manage.py check
+python manage.py test
 ```
 
-and show:
+**Say:**
 
-```text
-System check identified no issues (0 silenced).
-```
+> The project includes Django checks and automated tests covering fuel optimization, route matching, location resolution, and the API view behavior.
 
-### Say:
+Use the actual test count and result shown by the terminal. Do not state a hard-coded number unless it matches the current run.
 
-> Django's system checks also report no issues.
+## 5. Closing — ~20 seconds
 
----
+**Say:**
 
-# 5. Closing — ~20 seconds
-
-### Say:
-
-> So, to summarize: the API accepts US locations, calculates a driving route, identifies fuel stations along the route, selects cost-effective refueling points while respecting the 500-mile vehicle range, and returns the cost of additional fuel purchased during the journey.
+> To summarize: the API accepts US locations, calculates a driving route, identifies fuel stations along the route, selects cost-effective refueling points while respecting the 500-mile range, and returns the additional fuel cost.
 >
-> The vehicle starts with a full tank, so fuel already present at the origin is not charged again.
+> The station data is preprocessed offline, routing calls are minimized, and the station matching and optimization work is performed locally.
 >
-> The station data is preprocessed offline, external routing calls are minimized, and the remaining station matching and optimization work is performed locally.
->
-> The project includes the Django implementation, tests, setup instructions, Postman examples, and documentation in the repository.
+> The repository includes the Django implementation, tests, setup instructions, Postman examples, and documentation.
 >
 > Thanks for watching.
 
----
-
-# Quick Recording Checklist
-
-Before starting the Loom:
+## Quick recording checklist
 
 - [ ] Django server is running.
 - [ ] Fuel-price CSV has been imported.
@@ -306,83 +173,13 @@ Before starting the Loom:
 - [ ] Short-route request is ready.
 - [ ] No-route request is ready.
 - [ ] Editor is open to `routing/`.
-- [ ] `python manage.py test` passes.
 - [ ] `python manage.py check` passes.
+- [ ] `python manage.py test` passes.
 - [ ] README is updated.
-- [ ] Postman testing guide is updated.
-- [ ] Loom script matches the current API response.
-- [ ] No outdated `starting_fuel_cost_usd` references remain.
-- [ ] No outdated `$699`, `$863`, or other hard-coded fuel-cost figures are quoted unless they match the current live response.
-- [ ] Use the actual current Postman output when describing numerical results.
+- [ ] Postman guide is updated.
+- [ ] Use the current API output when describing actual results.
 - [ ] Keep the final recording below 5 minutes.
 
----
+## Important accuracy note
 
-# Recommended Timing
-
-| Section | Target |
-|---|---:|
-| Introduction | 20 sec |
-| Architecture / constraint | 40 sec |
-| Postman demo | 90 sec |
-| Code walkthrough | 100 sec |
-| Tests | 20 sec |
-| Closing | 20 sec |
-| **Total** | **~4 min 50 sec** |
-
----
-
-> **Tip:** Keep the code walkthrough focused. The reviewer does not need every file explained. Demonstrating the architecture, routing call, spatial filtering, optimization logic, and passing tests is enough for a concise assessment walkthrough.
-
----
-
-# Important Accuracy Notes
-
-## Fuel-cost definition
-
-The current implementation uses this model:
-
-```text
-Initial tank:
-500 miles range
-÷ 10 MPG
-= 50 gallons
-```
-
-The vehicle leaves the origin with that full tank.
-
-Therefore:
-
-```text
-total_fuel_cost_usd
-=
-cost of additional fuel purchased during the journey
-```
-
-It does not include the monetary value of fuel already present in the initial tank.
-
-## External API calls
-
-Do not claim that every request always makes exactly one external API call.
-
-A safer explanation is:
-
-> The normal request path minimizes external calls. Route calculation uses the routing service, while station filtering and fuel optimization are performed locally. If endpoint resolution requires fallback geocoding, an additional external request may occur.
-
-## Numerical results
-
-Never memorize the fuel cost from an earlier run.
-
-For the Loom, read the current value directly from Postman. This avoids a mismatch between the recording and the submitted code/data.
-
-## Test count
-
-Never state a fixed number of tests unless the current command actually reports it.
-
-Use:
-
-```bash
-python manage.py test
-```
-
-immediately before recording.
+The normal request path is designed to minimize external calls. Endpoint resolution uses the bundled US cities data for supported place-name inputs, and the driving route is obtained from OSRM. In the Loom, describe the normal local-data path rather than claiming that every possible request always makes exactly one external call.
