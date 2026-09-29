@@ -106,6 +106,30 @@ Run the development server:
 ```bash
 python manage.py runserver
 ```
+## Assessment Demo
+
+### Loom Video
+
+[Watch the API Demonstration](https://drive.google.com/file/d/1cy3VVrTPHHkvC3WKuDGiGUHD-Bm2lAqe/view?usp=sharing)
+
+The video demonstrates:
+
+- Django Fuel Route API
+- Postman API testing
+- Los Angeles → New York route
+- Cost-effective fuel-stop selection
+- 500-mile maximum vehicle range
+- 10 miles per gallon fuel efficiency
+- Total fuel-cost calculation
+- Interactive route map
+- US-location validation
+- Fuel-price dataset integration
+- Routing and optimization architecture
+- Automated tests
+
+### Repository
+
+[GitHub Repository](https://github.com/Mohamed-Fasidh/Spotter-Backend-Django)
 
 ## Demo endpoints
 
