@@ -1,4 +1,4 @@
-"""Endpoint resolution tests (no network: lat,lng parsing + offline city hit)."""
+"""Endpoint resolution tests."""
 
 from django.test import SimpleTestCase
 
@@ -25,6 +25,14 @@ class ResolveTests(SimpleTestCase):
     def test_rejects_non_us_coordinates(self):
         with self.assertRaises(resolve.ResolveError):
             resolve.resolve("51.5,-0.12")  # London, England
+
+    def test_rejects_canada_coordinate(self):
+        with self.assertRaises(resolve.ResolveError):
+            resolve.resolve("49.3,-100.0")  # Canada
+
+    def test_rejects_mexico_coordinate(self):
+        with self.assertRaises(resolve.ResolveError):
+            resolve.resolve("25.0,-100.0")  # Mexico
 
     def test_accepts_alaska_and_hawaii_coordinates(self):
         self.assertEqual(resolve.resolve("64.8,-147.7"), (64.8, -147.7))
