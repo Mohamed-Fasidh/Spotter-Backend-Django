@@ -19,7 +19,9 @@ M_TO_MI = 0.000621371
 # One reused Session: connection pooling + HTTP keep-alive, so repeat calls
 # skip the TCP + TLS handshake (~100-300 ms each) to the routing host.
 _SESSION = requests.Session()
-
+_SESSION.headers.update({
+    "User-Agent": "Spotter-Fuel-Route-Assessment/1.0"
+})
 
 class RouteError(Exception):
     """OSRM could not return a route (no path, bad input)."""

@@ -84,7 +84,9 @@ req "Los Angeles, CA -> New York, NY (place names)" 200 \
 req "Coordinates: 34.05,-118.24 -> 40.71,-74.01" 200 \
   "/route/?start=34.05,-118.24&finish=40.71,-74.01"
 
-# 3. Short route inside one tank -> zero additional fuel stops; starting fuel is included in the reported total cost / starting fuel.
+# 3. Short route inside one tank -> zero additional fuel stops;
+#    the initial full tank is assumed available before the journey,
+#    so additional fuel cost can be zero.
 req "Oklahoma City, OK -> Tulsa, OK (single tank)" 200 \
   "/route/?start=Oklahoma%20City,%20OK&finish=Tulsa,%20OK"
 
