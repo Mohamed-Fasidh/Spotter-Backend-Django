@@ -17,7 +17,8 @@ http://127.0.0.1:8000
 Make sure the fuel-price dataset has been imported:
 
 ```bash
-python manage.py import_fuel_prices
+python manage.py migrate
+python manage.py import_fuel_prices fuel-prices-for-be-assessment.csv
 ```
 
 ---

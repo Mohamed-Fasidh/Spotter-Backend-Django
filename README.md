@@ -90,6 +90,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+python manage.py migrate
 python manage.py check
 python manage.py test
 ```
@@ -97,7 +98,7 @@ python manage.py test
 Import the supplied fuel-price data before using the route endpoint:
 
 ```bash
-python manage.py import_fuel_prices
+python manage.py import_fuel_prices fuel-prices-for-be-assessment.csv
 ```
 
 Run the development server:
