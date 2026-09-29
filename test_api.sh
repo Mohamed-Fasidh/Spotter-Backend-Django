@@ -49,19 +49,26 @@ if "error" in d:
     print(f"  error: {d['error']}")
 if "distance_miles" in d and "total_fuel_cost_usd" in d:
     print(f"  distance: {d['distance_miles']} mi")
-    print(f"  total cost / starting fuel: ${d['total_fuel_cost_usd']}")
-if "starting_fuel_cost_usd" in d:
-    print(f"  starting fuel: ${d['starting_fuel_cost_usd']}")
+    print(f"  total additional fuel cost: ${d['total_fuel_cost_usd']}")
     print(f"  fuel stops: {len(d.get('fuel_stops', []))}")
+
     m = d.get("meta", {})
     if m:
-        print(f"  considered: {m.get('stations_considered')} stations"
-              f"  |  elapsed: {m.get('elapsed_ms')} ms")
-    for i, s in enumerate(d.get("fuel_stops", [])[:3], 1):
-        print(f"    #{i} mile {s['mile_marker']:>7} "
-              f"${s['price_per_gallon']:.3f}/gal  {s['gallons']} gal  "
-              f"${s['cost_usd']}  {s['name']} ({s['city']}, {s['state']})")
-    if len(d.get("fuel_stops", [])) > 3:
+        print(
+            f"  considered: {m.get('stations_considered')} stations"
+            f"  | elapsed: {m.get('elapsed_ms')} ms"
+        )
+
+    for i, s in enumerate(d.get('fuel_stops', [])[:3], 1):
+        print(
+            f"    #{i} mile {s['mile_marker']:>7} "
+            f"${s['price_per_gallon']:.3f}/gal  "
+            f"{s['gallons']} gal  "
+            f"${s['cost_usd']}  "
+            f"{s['name']} ({s['city']}, {s['state']})"
+        )
+
+    if len(d.get('fuel_stops', [])) > 3:
         print(f"    ... {len(d['fuel_stops']) - 3} more")
 PY
   rm -f "$tmp"
