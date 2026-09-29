@@ -174,8 +174,5 @@ CORRIDOR_MILES = 5.0
 # External services
 # ---------------------------------------------------------------------------
 
-# Public OSRM routing service. No API key required.
-OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
-
 # Public Nominatim geocoding service. No API key required.
 EXTERNAL_HTTP_TIMEOUT = 15

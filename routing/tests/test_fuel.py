@@ -1,7 +1,7 @@
 """Verify the greedy fuel optimizer against a brute-force optimum.
 
-The greedy in ``fuel.plan_fuel`` is provably optimal, but "provably" is worth
-nothing without a check. Here we build a small DP that computes the true
+The fuel optimizer is validated against an exhaustive reference implementation
+over randomized test cases.Here we build a small DP that computes the true
 minimum cost over the same inputs and assert the greedy matches on many
 randomized cases. This is the claim we make on camera: "I verified the greedy
 against a brute-force optimum."
