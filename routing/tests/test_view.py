@@ -1,3 +1,4 @@
+```python
 """End-to-end view tests with OSRM + endpoint geocoding mocked."""
 
 from unittest import mock
@@ -55,14 +56,28 @@ class RouteViewTests(SimpleTestCase):
 
         data = resp.json()
 
+        # Route response
         self.assertEqual(data["route"]["type"], "LineString")
         self.assertEqual(data["distance_miles"], 530.0)
 
+        # Fuel cost
         self.assertIsInstance(
             data["total_fuel_cost_usd"],
             (int, float),
         )
+        self.assertGreaterEqual(
+            data["total_fuel_cost_usd"],
+            0,
+        )
 
+        # Starting fuel is already in the vehicle.
+        # Therefore, its cost must not be added separately.
+        self.assertNotIn(
+            "starting_fuel_cost_usd",
+            data,
+        )
+
+        # Fuel stops
         self.assertGreater(len(data["fuel_stops"]), 0)
 
         for stop in data["fuel_stops"]:
@@ -76,6 +91,10 @@ class RouteViewTests(SimpleTestCase):
             self.assertIn("cost_usd", stop)
             self.assertIn("mile_marker", stop)
 
+            self.assertGreaterEqual(stop["gallons"], 0)
+            self.assertGreaterEqual(stop["cost_usd"], 0)
+
+        # Vehicle configuration
         self.assertEqual(
             data["meta"]["vehicle_range_miles"],
             500.0,
@@ -86,7 +105,41 @@ class RouteViewTests(SimpleTestCase):
             10.0,
         )
 
+        # Implied tank capacity:
+        # 500 miles / 10 MPG = 50 gallons.
+        tank_gallons = (
+            data["meta"]["vehicle_range_miles"]
+            / data["meta"]["vehicle_mpg"]
+        )
+
+        self.assertEqual(tank_gallons, 50.0)
+
         self.assertIn("elapsed_ms", data["meta"])
+
+    def test_total_cost_equals_fuel_stop_costs(self):
+        """API total cost must equal the sum of actual fuel purchases."""
+
+        p_resolve, p_route = self._patched(530.0)
+
+        with p_resolve, p_route:
+            resp = self.client.get(
+                "/route/",
+                {"start": "start", "finish": "finish"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+
+        expected_total = round(
+            sum(stop["cost_usd"] for stop in data["fuel_stops"]),
+            2,
+        )
+
+        self.assertEqual(
+            data["total_fuel_cost_usd"],
+            expected_total,
+        )
 
     def test_infeasible_returns_422(self):
         p_resolve, p_route = self._patched(1400.0)
@@ -139,3 +192,4 @@ class RouteViewTests(SimpleTestCase):
             resp.json()["error"],
             "Routing service unavailable.",
         )
+```
